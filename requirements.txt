@@ -1,0 +1,21 @@
+# Web framework
+fastapi
+uvicorn[standard]
+
+# Agent workflow
+langgraph
+langchain
+langchain-openai
+langchain-deepseek
+# Data validation and configuration
+pydantic
+pydantic-settings
+python-dotenv
+
+# Database and persistence
+aiosqlite
+langgraph-checkpoint-sqlite
+
+# Testing
+pytest
+httpx
