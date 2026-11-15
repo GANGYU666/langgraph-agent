@@ -62,11 +62,18 @@ async def run_agent():
 
     return result
 
-    return result
-
-
-def test_agent_end_to_end():
+def test_agent_end_to_end(tmp_path, monkeypatch):
     """测试完整的 Agent 执行流程。"""
+
+    # 将文件输出目录设置为 pytest 临时目录，避免污染真实 outputs
+    monkeypatch.setattr(
+        "app.tools.file_writer.OUTPUT_DIR",
+        tmp_path,
+    )
+    monkeypatch.setattr(
+        "app.tools.file_writer.PROJECT_ROOT",
+        tmp_path.parent,
+    )
 
     # 4. 运行 Agent
     result = asyncio.run(run_agent())

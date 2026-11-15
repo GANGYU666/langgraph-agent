@@ -55,6 +55,37 @@ def fake_planner(state):
         "error": "",
     }
 
+def fake_planner_with_calculation(state):
+    """先计算，再生成报告的测试计划。"""
+
+    return {
+        "plan": [
+            {
+                "step_id": 1,
+                "description": "计算平均值",
+                "tool": "calculator",
+                "tool_input": {
+                    "operation": "average",
+                    "numbers": [10, 20, 30],
+                },
+                "status": "pending",
+            },
+            {
+                "step_id": 2,
+                "description": "生成计算报告",
+                "tool": "file_writer",
+                "tool_input": {
+                    "filename": "calculation_confirmation_test.md",
+                    "content": "计算任务已完成。",
+                },
+                "status": "pending",
+            },
+        ],
+        "current_step": 0,
+        "iteration_count": 1,
+        "status": "running",
+        "error": "",
+    }
 
 @pytest.mark.anyio
 async def test_main_graph_approval(monkeypatch, tmp_path):
@@ -162,6 +193,74 @@ async def test_main_graph_rejection(monkeypatch, tmp_path):
     print("\n测试四通过：拒绝后任务取消")
     print("\n测试五通过：拒绝后没有生成文件")
 
+@pytest.mark.anyio
+async def test_confirmation_matches_final_file_content(
+    monkeypatch,
+    tmp_path,
+):
+    """确认预览与最终写入文件的内容保持一致。"""
+
+    monkeypatch.setattr(
+        "app.agent.graph.planner_node",
+        fake_planner_with_calculation,
+    )
+
+    monkeypatch.setattr(
+        "app.tools.file_writer.OUTPUT_DIR",
+        tmp_path,
+    )
+
+    monkeypatch.setattr(
+        "app.tools.file_writer.PROJECT_ROOT",
+        tmp_path.parent,
+    )
+
+    graph = build_agent_graph()
+
+    config = {
+        "configurable": {
+            "thread_id": "confirmation-content-test",
+        },
+        "recursion_limit": 20,
+    }
+
+    # 执行计算，并在文件写入前暂停
+    paused = await graph.ainvoke(
+        build_initial_state(),
+        config=config,
+    )
+
+    assert "__interrupt__" in paused
+
+    # 获取人工确认预览
+    interrupt_data = paused["__interrupt__"][0].value
+    confirmation_request = interrupt_data["request"]
+
+    assert "20.0" in confirmation_request
+
+    # 批准文件写入
+    result = await graph.ainvoke(
+        Command(resume=True),
+        config=config,
+    )
+
+    assert result["status"] == "completed"
+
+    # 检查最终文件
+    file_path = tmp_path / "calculation_confirmation_test.md"
+
+    assert file_path.exists()
+
+    final_content = file_path.read_text(encoding="utf-8")
+
+    assert "20.0" in final_content
+    assert "计算任务已完成。" in final_content
+
+    # 确认预览中的计算结果也出现在最终文件中
+    assert "20.0" in confirmation_request
+    assert "20.0" in final_content
+
+    print("\n测试通过：确认预览与最终文件均包含计算结果")
 
 if __name__ == "__main__":
     pytest.main([__file__, "-s"])

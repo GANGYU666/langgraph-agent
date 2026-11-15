@@ -313,6 +313,36 @@ def _format_previous_tool_results(tool_results: list[dict]) -> str:
 
     return "\n\n".join(sections)
 
+def _build_file_writer_input(
+    tool_input: dict,
+    tool_results: list[dict],
+) -> dict:
+    """
+    构建最终文件写入参数。
+
+    将前序工具的执行结果追加到文件内容中，
+    供人工确认和实际执行共同使用。
+    """
+
+    execution_input = dict(tool_input)
+
+    previous_results_text = _format_previous_tool_results(
+        tool_results
+    )
+
+    if previous_results_text:
+        original_content = execution_input.get("content", "")
+
+        execution_input["content"] = (
+            "# 任务执行报告\n\n"
+            "## 任务说明\n"
+            f"{original_content}\n\n"
+            "## 前序步骤执行结果\n\n"
+            f"{previous_results_text}\n"
+        )
+
+    return execution_input
+
 def _is_retryable_error(exc: Exception) -> bool:
     """
     判断异常是否属于可以重试的错误。
@@ -406,26 +436,12 @@ async def tool_executor_node(state: AgentState) -> dict:
     # 创建本次实际执行参数副本
     execution_input = dict(tool_input)
 
-    # 如果当前执行的是 File Writer，
-    # 则自动注入前面步骤产生的真实结果
+    # 如果是文件写入工具，构建最终写入内容
     if tool_name == "file_writer":
-
-        previous_results = state.get("tool_results", [])
-
-        previous_results_text = _format_previous_tool_results(
-            previous_results
+        execution_input = _build_file_writer_input(
+            tool_input,
+            state.get("tool_results", []),
         )
-
-        if previous_results_text:
-            original_content = execution_input.get("content", "")
-
-            execution_input["content"] = (
-                "# 任务执行报告\n\n"
-                "## 任务说明\n"
-                f"{original_content}\n\n"
-                "## 前序步骤执行结果\n\n"
-                f"{previous_results_text}\n"
-            )
 
     # 5. 执行对应工具
     execution_started_at = perf_counter()
@@ -981,6 +997,13 @@ def confirmation_node(state: AgentState) -> dict:
     # 4. 使用 Router 实际选择的工具和参数
     step["tool"] = tool_name
     step["tool_input"] = state.get("current_tool_input", {})
+
+    # 如果是文件写入工具，生成最终写入内容用于人工确认
+    if tool_name == "file_writer":
+        step["tool_input"] = _build_file_writer_input(
+            step["tool_input"],
+            state.get("tool_results", []),
+        )
 
     # 5. 构建确认信息
     request = build_confirmation_request(step)

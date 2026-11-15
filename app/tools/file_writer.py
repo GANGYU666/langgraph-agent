@@ -52,6 +52,19 @@ def file_writer(
     if filename.endswith((" ", ".")):
         raise ValueError("文件名不能以空格或句点结尾")
 
+    # 检查 Windows 保留文件名
+    reserved_names = {
+        "CON", "PRN", "AUX", "NUL",
+        *(f"COM{i}" for i in range(1, 10)),
+        *(f"LPT{i}" for i in range(1, 10)),
+    }
+
+    # Windows 保留名称即使带扩展名也不能使用
+    filename_stem = Path(filename).stem.upper()
+
+    if filename_stem in reserved_names:
+        raise ValueError("文件名不能使用 Windows 系统保留名称")
+
     # 3. 只允许 Markdown 文件
     if not filename.lower().endswith(".md"):
         raise ValueError("目前只允许生成 Markdown 文件")
@@ -73,13 +86,17 @@ def file_writer(
     if not output_path.is_relative_to(output_root):
         raise ValueError("不允许写入输出目录以外的位置")
 
-    # 8. 写入文件
-    output_path.write_text(
-        content,
-        encoding="utf-8",
-    )
+    # 8. 检查文件是否已经存在，避免意外覆盖
+    if output_path.exists():
+        raise FileExistsError(
+            f"文件已经存在，为避免覆盖原有内容，已取消写入：{filename}"
+        )
 
-    # 9. 返回执行结果
+    # 9. 独占创建文件，避免覆盖已有文件
+    with output_path.open("x", encoding="utf-8") as file:
+        file.write(content)
+
+    # 10. 返回执行结果
     return {
         "success": True,
         "filename": filename,
